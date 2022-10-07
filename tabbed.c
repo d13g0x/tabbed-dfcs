@@ -155,7 +155,7 @@ static void (*handler[LASTEvent]) (const XEvent *) = {
 	[MapRequest] = maprequest,
 	[PropertyNotify] = propertynotify,
 };
-static int bh, wx, wy, ww, wh, vbh;
+static int bh, obh, wx, wy, ww, wh, vbh;
 static unsigned int numlockmask;
 static Bool running = True, nextfocus, doinitspawn = True,
             fillagain = False, closelastclient = False,
@@ -260,6 +260,15 @@ configurenotify(const XEvent *e)
 		XFreePixmap(dpy, dc.drawable);
 		dc.drawable = XCreatePixmap(dpy, root, ww, wh,
 		              DefaultDepth(dpy, screen));
+
+		if (!obh && (wh <= bh)) {
+			obh = bh;
+			bh = 0;
+		} else if (!bh && (wh > obh)) {
+			bh = obh;
+			obh = 0;
+		}
+
 		if (sel > -1)
 			resize(sel, ww, wh - bh);
 		XSync(dpy, False);
@@ -321,7 +330,6 @@ drawbar(void)
 	XftColor *col;
 	int c, cc, fc, width, nbh;
 	char *name = NULL;
-	char tabtitle[256];
 
 	nbh = barvisibility ? vbh : 0;
 	if (nbh != bh) {
@@ -372,9 +380,7 @@ drawbar(void)
 		} else {
 			col = clients[c]->urgent ? dc.urg : dc.norm;
 		}
-		snprintf(tabtitle, sizeof(tabtitle), "%d: %s",
-		         c + 1, clients[c]->name);
-		drawtext(tabtitle, col);
+		drawtext(clients[c]->name, col);
 		dc.x += dc.w;
 		clients[c]->tabx = dc.x;
 	}
@@ -914,7 +920,7 @@ resize(int c, int w, int h)
 	XWindowChanges wc;
 
 	ce.x = 0;
-	ce.y = bh;
+	ce.y = wc.y = bh;
 	ce.width = wc.width = w;
 	ce.height = wc.height = h;
 	ce.type = ConfigureNotify;
@@ -925,7 +931,7 @@ resize(int c, int w, int h)
 	ce.override_redirect = False;
 	ce.border_width = 0;
 
-	XConfigureWindow(dpy, clients[c]->win, CWWidth | CWHeight, &wc);
+	XConfigureWindow(dpy, clients[c]->win, CWY | CWWidth | CWHeight, &wc);
 	XSendEvent(dpy, clients[c]->win, False, StructureNotifyMask,
 	           (XEvent *)&ce);
 }
@@ -1088,9 +1094,10 @@ setup(void)
 
 	size_hint = XAllocSizeHints();
 	if (!isfixed) {
-		size_hint->flags = PSize;
+		size_hint->flags = PSize | PMinSize;
 		size_hint->height = wh;
 		size_hint->width = ww;
+		size_hint->min_height = bh + 1;
 	} else {
 		size_hint->flags = PMaxSize | PMinSize;
 		size_hint->min_width = size_hint->max_width = ww;
